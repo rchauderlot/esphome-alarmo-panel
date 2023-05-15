@@ -1,0 +1,517 @@
+substitutions:
+  device_name: alarm-panel
+  friendly_name: "Panel Alarma"
+  api_key: !secret alarm_panel_api_key
+  ota_password: !secret alarm_panel_ota_password
+  wifi_ssid: !secret wifi_ssid
+  wifi_password: !secret wifi_password
+  wifi_ap_password: !secret ap_password
+
+
+globals:
+  - id: status_display_text
+    type: std::string
+    restore_value: no
+    initial_value: '"Cargando..."'
+  - id: status_display_text_blink_iteration
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: pincode_reader_progress_text
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: open_sensors_info_autohide_pending_time
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: sensor_ids
+    type: std::vector<std::string>
+    restore_value: no
+    initial_value: '{"vent_salon_izqda", "vent_salon_dcha", "vent_bano_dormit", "vent_banopasillo", "vent_dormitorio", "vent_cuarto_1", "vent_cuarto2"}'
+  - id: sensor_names
+    type: std::vector<std::string>
+    restore_value: no
+    initial_value: '{
+      "Ventana salon izqda", 
+      "Ventana salon dcha", 
+      "Ventana bano dorm", 
+      "Ventana bano fuera", 
+      "Ventana dormitorio", 
+      "Ventana cuarto 1", 
+      "Ventana cuarto 2" }'
+
+esphome:
+  name: ${device_name}
+  comment: ${friendly_name}
+
+#esp8266:
+#  board: d1_mini
+esp32:
+  board: nodemcu-32s
+
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: ${api_key}
+
+ota:
+  password: ${ota_password}
+
+wifi:
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
+#  manual_ip:
+#    static_ip: 192.168.68.XXX
+#    gateway: 192.168.68.1
+#    subnet: 255.255.255.0
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    password: ${wifi_ap_password}
+    ap_timeout: 10min
+
+
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Madrid
+    
+i2c:
+  sda: GPIO21
+  scl: GPIO22
+
+font:
+  # gfonts://family[@weight]
+  - file: "gfonts://Roboto"
+    id: roboto12
+    size: 12
+  # gfonts://family[@weight]
+  - file: "gfonts://Roboto"
+    id: roboto16
+    size: 16
+
+
+
+display:
+  - platform: ssd1306_i2c
+    id: main_display
+    model: "SSD1306 128x64"
+    #reset_pin: GPIO01
+    address: 0x3C
+    update_interval: 2s
+    lambda: |-
+      it.strftime(0, 0, id(roboto12), "%H:%M", id(sntp_time).now());
+      it.strftime(64, 0, id(roboto12), "%d-%m-%Y", id(sntp_time).now());
+      it.line(0, 16, 128, 16);
+      it.printf(64, 26, id(roboto16), TextAlign::CENTER_HORIZONTAL, "%s", id(status_display_text).c_str());
+      it.printf(64, 46, id(roboto12), TextAlign::CENTER_HORIZONTAL, "%s", id(pincode_reader_progress_text).c_str());
+
+      std::string open_sensors = id(open_sensors_status).state;      
+      if (id(open_sensors_info_autohide_pending_time) > 0 && open_sensors.length() > 0 && open_sensors != "None") {
+        
+        // Extract the first 4 open sensors and get their friendly names
+        std::vector<std::string> lines;
+        for (int i=0; i < id(sensor_ids).size() && lines.size() < 4; i++) {
+          if (open_sensors.find(id(sensor_ids)[i]) != std::string::npos) {
+            lines.push_back(id(sensor_names)[i]);
+          }
+        }
+
+        // draw a "popup"
+        it.filled_rectangle(5, 5, 118, 59, COLOR_OFF);
+        it.rectangle(5, 5, 118, 59);
+        it.start_clipping(5, 10, 118, 59);
+        if (lines.size() == 1) {
+          it.printf(64, 25, id(roboto12), TextAlign::CENTER_HORIZONTAL, lines[0].c_str());
+        } else if (lines.size() == 2) {
+          it.printf(64, 19, id(roboto12), TextAlign::CENTER_HORIZONTAL, lines[0].c_str());
+          it.printf(64, 32, id(roboto12), TextAlign::CENTER_HORIZONTAL, lines[1].c_str());
+        } else if (lines.size() == 3) {
+          it.printf(64, 12, id(roboto12), TextAlign::CENTER_HORIZONTAL, lines[0].c_str());
+          it.printf(64, 25, id(roboto12), TextAlign::CENTER_HORIZONTAL, lines[1].c_str());
+          it.printf(64, 38, id(roboto12), TextAlign::CENTER_HORIZONTAL, lines[2].c_str());
+        } else if (lines.size() == 4) {
+          it.printf(64,  6, id(roboto12), TextAlign::CENTER_HORIZONTAL, lines[0].c_str());
+          it.printf(64, 19, id(roboto12), TextAlign::CENTER_HORIZONTAL, lines[1].c_str());
+          it.printf(64, 32, id(roboto12), TextAlign::CENTER_HORIZONTAL, lines[2].c_str());
+          it.printf(64, 45, id(roboto12), TextAlign::CENTER_HORIZONTAL, lines[3].c_str());
+        }
+        it.end_clipping();
+      }
+
+
+matrix_keypad:
+  id: keypad
+  rows:
+    - pin:       
+        number: GPIO26
+        mode:
+          input: true
+          output: false
+          pullup: true
+    - pin:
+        number: GPIO27
+        mode:
+          input: true
+          output: false
+          pullup: true
+    - pin:
+        number: GPIO14
+        mode:
+          input: true
+          output: false
+          pullup: true
+    - pin:
+        number: GPIO13
+        mode:
+          input: true
+          output: false
+          pullup: true
+
+  columns:
+    - pin: 
+        number: GPIO25
+        mode:
+          input: false
+          output: true
+    - pin: 
+        number: GPIO33
+        mode:
+          input: false
+          output: true
+    - pin: 
+        number: GPIO32
+        mode:
+          input: false
+          output: true
+    - pin: 
+        number: GPIO19
+        mode:
+          input: false
+          output: true
+
+  keys: "123A456B789C*0#D"
+  has_diodes: false
+  
+
+
+sensor:
+  - platform: homeassistant
+    entity_id: alarm_control_panel.alarmo
+    id: arm_disarm_delay
+    attribute: delay
+
+key_collector:
+  - id: pincode_reader
+    source_id: keypad
+    min_length: 4
+    max_length: 4
+    end_keys: "D"
+    end_key_required: true
+    back_keys: "#"
+    clear_keys: "*"
+    allowed_keys: "0123456789"
+    timeout: 10s
+    on_progress:
+      - logger.log: # log
+          format: "input progress: '%s'"
+          args: [ 'x.c_str()' ]
+      - globals.set:
+          id: pincode_reader_progress_text
+          value: !lambda |-
+            std::string pinHiddenString;
+            for (int i=0; i < x.length(); i++) {
+              pinHiddenString += "X";
+            }
+            return pinHiddenString;
+      - component.update: main_display
+      - rtttl.play: 'short:d=4,o=5,b=100:16e6' # beep
+    on_result:
+      - logger.log:
+          format: "input result: '%s'"
+          args: [ 'x.c_str()' ]
+      - globals.set:
+          id: pincode_reader_progress_text
+          value: '""' 
+      - component.update: main_display
+      - rtttl.play: 'short:d=4,o=5,b=100:16e6' # beep
+      # send event with code to home assistant
+      - homeassistant.service:
+          service: alarmo.disarm
+          data:  
+            entity_id: alarm_control_panel.alarmo
+            code: !lambda 'return x.c_str();'
+      - globals.set:
+          id: pincode_reader_progress_text
+          value: '""' 
+      - component.update: main_display
+    on_timeout:
+      - logger.log:
+          format: "input timeout: '%s'"
+          args: [ 'x.c_str()' ]
+      - globals.set:
+          id: pincode_reader_progress_text
+          value: '""' 
+      - component.update: main_display
+
+
+binary_sensor:
+  - platform: matrix_keypad
+    keypad_id: keypad
+    id: key_arm_away
+    key: 'A'
+    on_click:
+      - homeassistant.service:
+          service: alarmo.arm
+          data:  
+            mode: away
+            entity_id: alarm_control_panel.alarmo
+      - if:
+          condition:
+            lambda: !lambda "return id(open_sensors_info_autohide_pending_time) > 0;"
+          then:
+            - globals.set:
+                id: open_sensors_info_autohide_pending_time  
+                value: '10'    
+            - while:
+                condition:
+                  lambda: !lambda "return id(open_sensors_info_autohide_pending_time) > 0;"
+                then:
+                  - delay: 1s
+                  - globals.set:
+                      id: open_sensors_info_autohide_pending_time  
+                      value: !lambda "return id(open_sensors_info_autohide_pending_time) - 1;"
+  - platform: matrix_keypad
+    keypad_id: keypad
+    id: key_arm_night
+    key: 'B'
+    on_click:
+      - homeassistant.service:
+          service: alarmo.arm
+          data:  
+            mode: night
+            entity_id: alarm_control_panel.alarmo
+      - if:
+          condition:
+            lambda: !lambda "return id(open_sensors_info_autohide_pending_time) > 0;"
+          then:
+            - globals.set:
+                id: open_sensors_info_autohide_pending_time  
+                value: '10'    
+            - while:
+                condition:
+                  lambda: !lambda "return id(open_sensors_info_autohide_pending_time) > 0;"
+                then:
+                  - delay: 1s
+                  - globals.set:
+                      id: open_sensors_info_autohide_pending_time  
+                      value: !lambda "return id(open_sensors_info_autohide_pending_time) - 1;"
+  - platform: matrix_keypad
+    keypad_id: keypad
+    id: key_arm_custom
+    key: 'C'
+    on_click:
+      - homeassistant.service:
+          service: alarmo.arm
+          data:  
+            mode: custom
+            entity_id: alarm_control_panel.alarmo
+      - if:
+          condition:
+            lambda: !lambda "return id(open_sensors_info_autohide_pending_time) > 0;"
+          then:
+            - globals.set:
+                id: open_sensors_info_autohide_pending_time  
+                value: '10'    
+            - while:
+                condition:
+                  lambda: !lambda "return id(open_sensors_info_autohide_pending_time) > 0;"
+                then:
+                  - delay: 1s
+                  - globals.set:
+                      id: open_sensors_info_autohide_pending_time  
+                      value: !lambda "return id(open_sensors_info_autohide_pending_time) - 1;"
+
+output:
+  - platform: ledc
+    pin: GPIO18
+    id: buzzer_out
+
+rtttl:
+  output: buzzer_out
+  id: buzzer
+
+
+# State	               Description
+# disarmed	           The alarm is disabled/off.
+# arming	             The alarm is arming. After the leave delay has expired, the alarm will be armed.
+# armed_away	         The alarm is armed in away mode.
+# armed_home	         The alarm is armed in home mode.
+# armed_night	         The alarm is armed in night mode.
+# armed_vacation	     The alarm is armed in vacation mode.
+# armed_custom_bypass	 The alarm is armed in custom mode.
+# pending	             The alarm is pending. After the entry delay has expired, the alarm will be triggered.
+# triggered	           The alarm is triggered.
+# unavailable          Something is wrong.
+# unknown              Something is wrong.
+text_sensor:
+  - platform: homeassistant
+    entity_id: alarm_control_panel.alarmo
+    id: alarm_status
+    internal: true
+    on_value:
+      - if:
+          condition:
+            text_sensor.state: 
+              id: alarm_status
+              state: 'arming'
+          then:
+            - while:
+                condition:
+                  text_sensor.state: 
+                    id: alarm_status
+                    state: 'arming'
+                then:
+                  - if: 
+                      condition:
+                        lambda: !lambda return id(status_display_text_blink_iteration) % 2 == 0;
+                      then:
+                        - globals.set:
+                            id: status_display_text
+                            value: '"Armando"'
+                        - component.update: main_display
+                        - rtttl.play: 'short:d=4,o=5,b=100:16e6' # beep
+                      else:
+                        - globals.set:
+                            id: status_display_text
+                            value: '""'
+                        - component.update: main_display
+                  - globals.set:
+                      id: status_display_text_blink_iteration  
+                      value: !lambda "return id(status_display_text_blink_iteration) + 1;"
+                  - if: 
+                      condition:
+                        lambda: !lambda "return (id(arm_disarm_delay).state != 0 && id(status_display_text_blink_iteration) / 2) > (2 * id(arm_disarm_delay).state / 3) ;"
+                      then:
+                        - delay: 0.25s
+                      else:
+                        - delay: 0.5s
+            - globals.set:
+                id: status_display_text_blink_iteration  
+                value: '0'
+      - if:
+          condition:
+            text_sensor.state: 
+              id: alarm_status
+              state: 'pending'
+          then:
+            - while:
+                condition:
+                  text_sensor.state: 
+                    id: alarm_status
+                    state: 'pending'
+                then:
+                  - if: 
+                      condition:
+                        lambda: !lambda return id(status_display_text_blink_iteration) % 2 == 0;
+                      then:
+                        - globals.set:
+                            id: status_display_text
+                            value: '"ARMADO"'
+                        - component.update: main_display
+                        - rtttl.play: 'short:d=4,o=5,b=100:16e6' # beep
+                        - globals.set:
+                            id: status_display_text_blink_iteration  
+                            value: '1'
+                      else:
+                        - globals.set:
+                            id: status_display_text
+                            value: '""'
+                        - component.update: main_display
+                        - globals.set:
+                            id: status_display_text_blink_iteration  
+                            value: '0'
+                  - delay: 0.5s
+            - globals.set:
+                id: status_display_text_blink_iteration  
+                value: '0'
+      - if:
+          condition:
+            text_sensor.state: 
+              id: alarm_status
+              state: 'triggered'
+          then:
+            - while:
+                condition:
+                  text_sensor.state: 
+                    id: alarm_status
+                    state: 'triggered'
+                then:
+                  - if: 
+                      condition:
+                        lambda: !lambda return id(status_display_text_blink_iteration) % 2 == 0;
+                      then:
+                        - globals.set:
+                            id: status_display_text
+                            value: '"ALARMA!!!"' 
+                        - component.update: main_display
+                        - rtttl.play: 'siren:d=8,o=5,b=100:e,d' # beep
+                        - globals.set:
+                            id: status_display_text_blink_iteration  
+                            value: '1'
+                      else:
+                        - globals.set:
+                            id: status_display_text
+                            value: '""'
+                        - component.update: main_display
+                        - globals.set:
+                            id: status_display_text_blink_iteration  
+                            value: '0'
+                  - delay: 0.25s
+            - globals.set:
+                id: status_display_text_blink_iteration  
+                value: '0'
+      - if:
+          condition:
+            text_sensor.state: 
+              id: alarm_status
+              state: 'disarmed'
+          then:
+            - globals.set:
+                id: status_display_text
+                value: '"Desarmado"' 
+            - component.update: main_display
+      - if:
+          condition:
+            or:
+              - text_sensor.state: 
+                  id: alarm_status
+                  state: 'armed_away'
+              - text_sensor.state: 
+                  id: alarm_status
+                  state: 'armed_home'
+              - text_sensor.state: 
+                  id: alarm_status
+                  state: 'armed_night'
+              - text_sensor.state: 
+                  id: alarm_status
+                  state: 'armed_vacation'  
+          then:
+            - globals.set:
+                id: status_display_text
+                value: '"ARMADO"'
+            - component.update: main_display
+  - platform: homeassistant
+    entity_id: alarm_control_panel.alarmo
+    id: open_sensors_status
+    attribute: open_sensors
+    internal: true
+    on_value:
+      - component.update: main_display
+    
