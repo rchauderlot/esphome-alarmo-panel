@@ -104,7 +104,7 @@ display:
     model: "SSD1306 128x64"
     #reset_pin: GPIO01
     address: 0x3C
-    update_interval: 2s
+    update_interval: 1s
     lambda: |-
       it.strftime(0, 0, id(roboto12), "%H:%M", id(sntp_time).now());
       it.strftime(64, 0, id(roboto12), "%d-%m-%Y", id(sntp_time).now());
@@ -162,13 +162,13 @@ matrix_keypad:
           output: false
           pullup: true
     - pin:
-        number: GPIO14
+        number: GPIO05 #GPIO14
         mode:
           input: true
           output: false
           pullup: true
     - pin:
-        number: GPIO13
+        number: GPIO18 #GPIO13
         mode:
           input: true
           output: false
@@ -251,6 +251,12 @@ key_collector:
           id: pincode_reader_progress_text
           value: '""' 
       - component.update: main_display
+      - delay: 0.33s
+      - component.update: main_display
+      - delay: 0.33s
+      - component.update: main_display
+      - delay: 0.33s
+      - component.update: main_display
     on_timeout:
       - logger.log:
           format: "input timeout: '%s'"
@@ -274,19 +280,27 @@ binary_sensor:
             entity_id: alarm_control_panel.alarmo
       - if:
           condition:
-            lambda: !lambda "return id(open_sensors_info_autohide_pending_time) > 0;"
+            lambda: !lambda "return id(open_sensors_info_autohide_pending_time) == 0;"
           then:
             - globals.set:
                 id: open_sensors_info_autohide_pending_time  
-                value: '10'    
+                value: '10'
+            - component.update: main_display
+            - delay: 0.33s
+            - component.update: main_display
+            - delay: 0.33s
+            - component.update: main_display
+            - delay: 0.33s
+            - component.update: main_display
             - while:
                 condition:
                   lambda: !lambda "return id(open_sensors_info_autohide_pending_time) > 0;"
                 then:
-                  - delay: 1s
                   - globals.set:
                       id: open_sensors_info_autohide_pending_time  
                       value: !lambda "return id(open_sensors_info_autohide_pending_time) - 1;"
+                  - delay: 1s
+
   - platform: matrix_keypad
     keypad_id: keypad
     id: key_arm_night
@@ -299,19 +313,26 @@ binary_sensor:
             entity_id: alarm_control_panel.alarmo
       - if:
           condition:
-            lambda: !lambda "return id(open_sensors_info_autohide_pending_time) > 0;"
+            lambda: !lambda "return id(open_sensors_info_autohide_pending_time) == 0;"
           then:
             - globals.set:
                 id: open_sensors_info_autohide_pending_time  
-                value: '10'    
+                value: '10'
+            - component.update: main_display
+            - delay: 0.33s
+            - component.update: main_display
+            - delay: 0.33s
+            - component.update: main_display
+            - delay: 0.33s
+            - component.update: main_display
             - while:
                 condition:
                   lambda: !lambda "return id(open_sensors_info_autohide_pending_time) > 0;"
                 then:
-                  - delay: 1s
                   - globals.set:
                       id: open_sensors_info_autohide_pending_time  
                       value: !lambda "return id(open_sensors_info_autohide_pending_time) - 1;"
+                  - delay: 1s
   - platform: matrix_keypad
     keypad_id: keypad
     id: key_arm_custom
@@ -324,19 +345,27 @@ binary_sensor:
             entity_id: alarm_control_panel.alarmo
       - if:
           condition:
-            lambda: !lambda "return id(open_sensors_info_autohide_pending_time) > 0;"
+            lambda: !lambda "return id(open_sensors_info_autohide_pending_time) == 0;"
           then:
             - globals.set:
                 id: open_sensors_info_autohide_pending_time  
-                value: '10'    
+                value: '10'
+            - component.update: main_display
+            - delay: 0.33s
+            - component.update: main_display
+            - delay: 0.33s
+            - component.update: main_display
+            - delay: 0.33s
+            - component.update: main_display
             - while:
                 condition:
                   lambda: !lambda "return id(open_sensors_info_autohide_pending_time) > 0;"
                 then:
-                  - delay: 1s
                   - globals.set:
                       id: open_sensors_info_autohide_pending_time  
                       value: !lambda "return id(open_sensors_info_autohide_pending_time) - 1;"
+                  - delay: 1s
+
 
 output:
   - platform: ledc
@@ -380,28 +409,40 @@ text_sensor:
                 then:
                   - if: 
                       condition:
-                        lambda: !lambda return id(status_display_text_blink_iteration) % 2 == 0;
+                        lambda: !lambda "return id(arm_disarm_delay).state != 0 && id(status_display_text_blink_iteration) > (2 * id(arm_disarm_delay).state / 3) ;"
                       then:
-                        - globals.set:
-                            id: status_display_text
-                            value: '"Armando"'
+                        - if: 
+                            condition:
+                              lambda: !lambda return id(status_display_text_blink_iteration) % 2 == 0;
+                            then:
+                              - globals.set:
+                                  id: status_display_text
+                                  value: '"Armando"'
+                              - rtttl.play: 'short:d=4,o=5,b=100:16e6' # beep
+                            else:
+                              - globals.set:
+                                  id: status_display_text
+                                  value: '""'
                         - component.update: main_display
-                        - rtttl.play: 'short:d=4,o=5,b=100:16e6' # beep
+                        - delay: 0.25s
                       else:
-                        - globals.set:
-                            id: status_display_text
-                            value: '""'
+                        - if: 
+                            condition:
+                              lambda: !lambda return id(status_display_text_blink_iteration) % 2 == 0;
+                            then:
+                              - globals.set:
+                                  id: status_display_text
+                                  value: '"Armando"'
+                              - rtttl.play: 'short:d=4,o=5,b=100:16e6' # beep
+                            else:
+                              - globals.set:
+                                  id: status_display_text
+                                  value: '""'
                         - component.update: main_display
+                        - delay: 0.5s
                   - globals.set:
                       id: status_display_text_blink_iteration  
                       value: !lambda "return id(status_display_text_blink_iteration) + 1;"
-                  - if: 
-                      condition:
-                        lambda: !lambda "return (id(arm_disarm_delay).state != 0 && id(status_display_text_blink_iteration) / 2) > (2 * id(arm_disarm_delay).state / 3) ;"
-                      then:
-                        - delay: 0.25s
-                      else:
-                        - delay: 0.5s
             - globals.set:
                 id: status_display_text_blink_iteration  
                 value: '0'
@@ -424,20 +465,16 @@ text_sensor:
                         - globals.set:
                             id: status_display_text
                             value: '"ARMADO"'
-                        - component.update: main_display
                         - rtttl.play: 'short:d=4,o=5,b=100:16e6' # beep
-                        - globals.set:
-                            id: status_display_text_blink_iteration  
-                            value: '1'
                       else:
                         - globals.set:
                             id: status_display_text
                             value: '""'
-                        - component.update: main_display
-                        - globals.set:
-                            id: status_display_text_blink_iteration  
-                            value: '0'
+                  - component.update: main_display
                   - delay: 0.5s
+                  - globals.set:
+                      id: status_display_text_blink_iteration  
+                      value: !lambda "return id(status_display_text_blink_iteration) + 1;"
             - globals.set:
                 id: status_display_text_blink_iteration  
                 value: '0'
